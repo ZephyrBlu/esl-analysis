@@ -1,4 +1,5 @@
 import re
+from collections import defaultdict
 from requests_html import AsyncHTMLSession
 
 
@@ -11,6 +12,10 @@ BACKGROUND_COLOURS = {
     'rgb(222, 227, 239)': 'Terran',
 }
 matchup_win_loss = {}
+player_win_loss = defaultdict(lambda: {
+    'win': 0,
+    'loss': 0,
+})
 for race in RACES:
     matchup_win_loss[race] = {}
     for race_inner in RACES:
@@ -49,7 +54,7 @@ def generate_requests(start_num, end_num=None):
 
 
 session = AsyncHTMLSession()
-results = session.run(*generate_requests(61))
+results = session.run(*generate_requests(62))
 for page in results:
     games = page.html.find('.bracket-game')
     for game in games:
@@ -68,6 +73,7 @@ for page in results:
             cell_background = re.search('(?<=background:)[^;]*', cell_style)[0]
 
             # sometimes background can be uncoloured due to a bye
+            # should probably also account for Random here
             if cell_background not in BACKGROUND_COLOURS:
                 continue
 
@@ -79,7 +85,9 @@ for page in results:
             except ValueError:
                 continue
 
+            player_name = player_cell.find('span:nth-child(2)')[0].text
             players[p_id] = {
+                'name': player_name,
                 'race': player_race,
                 'score': score,
             }
@@ -89,20 +97,30 @@ for page in results:
             continue
 
         for p_id, info in players.items():
+            player_name = players[p_id]['name']
             player_race = players[p_id]['race']
             player_score = players[p_id]['score']
 
             opp_id = 1 if p_id == 2 else 2
+            opp_name = players[opp_id]['name']
             opp_race = players[opp_id]['race']
 
             # score of 0 means there will be no change in wins/losses
             if player_score == 0:
                 continue
 
+            player_win_loss[player_name]['win'] += player_score
+            player_win_loss[opp_name]['loss'] += player_score
             matchup_win_loss[player_race][opp_race]['win'] += player_score
             matchup_win_loss[opp_race][player_race]['loss'] += player_score
 
 
+for p, v in player_win_loss.items():
+    total = v['win'] + v['loss']
+    winrate = round((v['win'] / total) * 100, 1) if total else 0
+    print(f'{p} {winrate}% ({v["win"]}/{total})')
+
+print('\n')
 for ro, ri in matchup_win_loss.items():
     print(ro)
     print('-----')
